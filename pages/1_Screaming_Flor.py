@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from seo_logic.py import audit_one, to_csv_bytes # Asegúrate de tener estas funciones en seo_logic
+from seo_logic import audit_one, to_csv_bytes # Asegúrate de tener estas funciones en seo_logic
 
 st.set_page_config(page_title="DeSeo - Screaming Flor", layout="wide")
 
