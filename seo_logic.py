@@ -84,35 +84,54 @@ def audit_one(url, timeout=15):
     return out
 
 
-def get_google_suggestions(query):
-    """Obtiene sugerencias de autocompletado de Google de forma gratuita."""
-    url = f"http://suggestqueries.google.com/complete/search?client=firefox&q={query}"
+def get_latam_countries():
+    """Diccionario de países para geolocalización de Google."""
+    return {
+        "Argentina": "ar", "México": "mx", "Colombia": "co", 
+        "Chile": "cl", "Perú": "pe", "Uruguay": "uy", "España": "es"
+    }
+
+def get_google_suggestions(query, country_code="ar"):
+    """
+    Obtiene sugerencias de Google geolocalizadas.
+    gl: country code, hl: language code
+    """
+    url = f"http://suggestqueries.google.com/complete/search?client=firefox&gl={country_code}&hl=es&q={query}"
     try:
         r = requests.get(url, headers=HEADERS, timeout=5)
-        # El formato de respuesta es [query, [sugerencias], ...]
-        suggestions = r.json()[1]
-        return suggestions
+        return r.json()[1]
     except:
         return []
 
-def analyze_keywords_with_openai(api_key, seed_keyword, suggestions):
-    """Usa OpenAI para categorizar las keywords y sugerir una estrategia."""
+def get_expanded_suggestions(seed, country_code):
+    """Genera una lista más rica de keywords usando modificadores."""
+    expanded = set()
+    # Modificadores SEO para detectar intención
+    modifiers = ["", "como ", "que es ", "mejor ", "comprar ", "donde "]
+    
+    for mod in modifiers:
+        results = get_google_suggestions(mod + seed, country_code)
+        expanded.update(results)
+    
+    return list(expanded)
+
+def analyze_keywords_with_openai(api_key, seed_keyword, suggestions, country):
+    """Análisis estratega con OpenAI."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
     
     prompt = f"""
-    Actúa como una experta en SEO. He realizado un keyword research para '{seed_keyword}'.
-    Estas son las sugerencias de autocompletado encontradas: {', '.join(suggestions)}.
+    Eres una consultora SEO experta en el mercado de {country}.
+    Analiza estas keywords derivadas de '{seed_keyword}': {', '.join(suggestions[:30])}.
     
-    Por favor, devuélveme una tabla en formato JSON con las siguientes columnas:
-    1. keyword: la palabra clave.
-    2. intencion: (Informativa, Transaccional o Navegacional).
-    3. etapa_embudo: (TOFU, MOFU, BOFU).
-    4. idea_contenido: una breve idea de qué escribir para esta keyword.
+    Devuelve un JSON con una lista de objetos bajo la clave 'keywords':
+    - keyword: la palabra clave.
+    - intencion: (Informativa, Transaccional o Navegacional).
+    - pista_educativa: Una frase corta de cómo usarla (ej: 'Ideal para un post de blog resolviendo dudas').
+    - volumen_estimado: Clasifícalo como 'Alto', 'Medio' o 'Bajo' según tu conocimiento general.
     
-    Responde ÚNICAMENTE el JSON.
+    Responde solo el objeto JSON.
     """
-    
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -125,8 +144,8 @@ def analyze_keywords_with_openai(api_key, seed_keyword, suggestions):
 
 def get_research_glossary():
     return {
-        "Keyword Research": "El proceso de encontrar y analizar los términos de búsqueda que la gente introduce en los buscadores.",
-        "Intención de Búsqueda": "El 'por qué' de la búsqueda. ¿El usuario quiere comprar, aprender o encontrar un sitio específico?",
-        "TOFU/MOFU/BOFU": "Etapas del embudo de conversión (Top, Middle, Bottom of the Funnel) que indican qué tan cerca está el usuario de convertir.",
-        "Seed Keyword": "La palabra clave 'semilla' o base desde la cual empezamos a buscar variaciones."
+        "Keyword Semilla": "El término base (nicho) desde el cual generamos ideas.",
+        "Intención de Búsqueda": "El objetivo del usuario: ¿Quiere saber (Informativa) o quiere comprar (Transaccional)?",
+        "Geolocalización": "Adaptar los resultados al país específico, ya que el lenguaje y las tendencias cambian.",
+        "Long Tail Keywords": "Frases más largas y específicas que suelen ser más fáciles de posicionar."
     }
