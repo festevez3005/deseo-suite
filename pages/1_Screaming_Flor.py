@@ -1,57 +1,64 @@
 import streamlit as st
 import pandas as pd
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from seo_logic import audit_one, to_csv_bytes # Asegúrate de tener estas funciones en seo_logic
+from seo_logic import audit_one, load_sitemap_urls, to_csv_bytes, get_educational_legend
 
-st.set_page_config(page_title="DeSeo - Screaming Flor", layout="wide")
+st.set_page_config(page_title="DeSeo - Auditoría Masiva", layout="wide")
 
-st.title("🌸 Screaming Flor: Diagnóstico SEO")
-st.markdown("Analiza los elementos vitales de tu web y mejora tu puntuación.")
+st.title("🌸 Screaming Flor: Auditoría de Sitio")
 
-# --- ENTRADA DE DATOS ---
-col_in, col_set = st.columns([2, 1])
-with col_in:
-    url_to_test = st.text_input("URL a analizar", placeholder="https://ejemplo.com")
-with col_set:
-    concurrency = st.slider("Velocidad de rastreo", 1, 10, 5)
+# --- LEYENDAS EDUCATIVAS ---
+with st.expander("📚 Guía rápida: ¿Qué estamos analizando?"):
+    legends = get_educational_legend()
+    for key, text in legends.items():
+        st.write(f"**{key.replace('_', ' ').title()}:** {text}")
 
-if st.button("🚀 Iniciar Análisis", type="primary"):
-    if url_to_test:
-        with st.spinner("Escaneando sitio..."):
-            # En este ejemplo analizamos una sola, pero la lógica ThreadPool sirve para listas
-            data = audit_one(url_to_test)
-            df = pd.DataFrame([data])
-        
-        # --- CABECERA DE RESULTADOS ---
-        score = data["seo_score"]
-        st.divider()
-        c1, c2 = st.columns([1, 3])
-        with c1:
-            st.metric("SEO Score", f"{score}/100")
-        with c2:
-            if score == 100: st.balloons(); st.success("¡Tu página es un ejemplo a seguir!")
-            elif score > 70: st.info("Vas por buen camino, pero hay detalles por pulir.")
-            else: st.warning("Hay problemas críticos que están afectando tu posicionamiento.")
+# --- ENTRADA ---
+st.sidebar.header("Configuración")
+mode = st.sidebar.radio("Fuente de datos", ["Sitemap XML", "Lista Manual"])
+max_pages = st.sidebar.slider("Límite de páginas", 5, 50, 20)
 
-        # --- TABS ---
-        t_diag, t_tech, t_content = st.tabs(["🎯 Diagnóstico", "🌐 Técnico", "📝 On-Page"])
-        
-        with t_diag:
-            st.subheader("Hoja de Ruta")
-            st.write(f"**Recomendación principal:** {data['recommendation']}")
-            # Aquí podrías listar los errores detectados de forma humana
-            if score < 100:
-                st.write("### Tareas pendientes:")
-                if data["h1_count"] != 1: st.error("- Corregir los encabezados H1 (debe haber exactamente uno).")
-                if data["title_status"] != "🟢 Perfecto": st.warning("- Ajustar la extensión del título SEO.")
-                if data["img_no_alt"] > 0: st.info(f"- Añadir texto ALT a las {data['img_no_alt']} imágenes faltantes.")
+urls = []
+if mode == "Sitemap XML":
+    s_url = st.text_input("URL del Sitemap", placeholder="https://tusitio.com/sitemap.xml")
+    if s_url: urls = load_sitemap_urls(s_url, max_pages)
+else:
+    t_area = st.text_area("Pega tus URLs (una por línea)")
+    if t_area: urls = [u.strip() for u in t_area.splitlines() if u.strip()][:max_pages]
 
-        with t_tech:
-            st.json({"Status Code": data["status_code"], "H1 Count": data["h1_count"]})
+if st.button("🚀 Iniciar Auditoría Masiva", type="primary") and urls:
+    results = []
+    progress = st.progress(0)
+    status = st.empty()
+    
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(audit_one, u): u for u in urls}
+        for i, fut in enumerate(as_completed(futures)):
+            results.append(fut.result())
+            progress.progress((i + 1) / len(urls))
+            status.text(f"Procesando {i+1} de {len(urls)}...")
 
-        with t_content:
-            st.write(f"**Título:** {data['title']} ({data['title_status']})")
-            st.write(f"**Meta Descripción:** {data['meta_desc']} ({data['desc_status']})")
+    df = pd.DataFrame(results)
+    
+    # --- VISUALIZACIÓN ---
+    st.divider()
+    
+    # KPIs Generales
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Salud Promedio", f"{int(df['seo_score'].mean())}/100")
+    c2.metric("Páginas con Error", len(df[df['status_code'] != 200]))
+    c3.metric("Promedio Carga", f"{df['response_time'].mean():.2f}s")
 
-    else:
-        st.error("Por favor, ingresa una URL válida.")
+    # Tabla Interactiva
+    st.subheader("📊 Resultados Detallados")
+    
+    # Aplicar colores al dataframe (opcional pero muy útil)
+    def color_score(val):
+        color = 'red' if val < 60 else 'orange' if val < 90 else 'green'
+        return f'color: {color}; font-weight: bold'
+
+    st.dataframe(df.style.applymap(color_score, subset=['seo_score']), use_container_width=True)
+
+    # Descarga
+    st.download_button("📥 Descargar Reporte para Alumnos", data=to_csv_bytes(df), file_name="auditoria_deseo.csv")
