@@ -1,84 +1,84 @@
 import streamlit as st
 
-# Configuración de la página
 st.set_page_config(
     page_title="DeSeo - Suite SEO Latinoamericana",
     page_icon="🌸",
     layout="wide"
 )
 
-# ESTILO CORREGIDO PARA ALTO CONTRASTE
+# Estilo corregido para visibilidad en temas oscuros/claros
 st.markdown("""
     <style>
     .main-title {
-        font-size: 100px;
+        font-size: 45px;
         color: #FF4B4B;
         font-weight: bold;
         text-align: center;
-        margin-bottom: 30px;
-    }
-    .manifesto-box {
-        background-color: #1E1E1E; /* Fondo oscuro sólido */
-        padding: 35px;
-        border-left: 6px solid #FF4B4B;
-        border-radius: 12px;
-        margin: 20px 0;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-    }
-    .manifesto-box h3 {
-        color: #FF4B4B !important;
         margin-bottom: 20px;
     }
-    .manifesto-text {
-        color: #E0E0E0 !important; /* Texto gris muy claro/blanco */
-        font-size: 18px;
+    .manifesto-box {
+        background-color: #1E1E1E; /* Fondo oscuro para contraste */
+        padding: 40px;
+        border-radius: 15px;
+        border: 1px solid #333;
+        margin: 20px 0;
+        color: #FFFFFF; /* Texto blanco */
         line-height: 1.6;
-        font-style: italic;
     }
     .highlight {
         color: #FF4B4B;
         font-weight: bold;
-        text-transform: uppercase;
-        letter-spacing: 1px;
+    }
+    .concept-tag {
+        background-color: #333;
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-family: monospace;
+        color: #FF4B4B;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# Encabezado
 st.markdown('<p class="main-title">Bienvenida a DeSeo 🌸</p>', unsafe_allow_html=True)
 
-# --- MANIFIESTO CON CONTRASTE CORREGIDO ---
+# --- NUEVO MANIFIESTO: INGENIERÍA INVERSA Y SOBERANÍA ---
 st.markdown("""
     <div class="manifesto-box">
-        <h3>✨ Una reflexión antes de empezar...</h3>
-        <p class="manifesto-text">
-            Los datos deben ser siempre analizados en su <b>contexto</b>. Revisarlos no implica que vayamos a tener certezas absolutas; 
-            trabajamos con humanos, cuyos comportamientos no siempre son predecibles. 
-            <br><br>
-            Una buena estrategia de SEO contempla esto: está contextualizada y acompaña los comportamientos. 
-            A diferencia de otros canales, el SEO nos da el <span class="highlight">poder sobre el mensaje y sobre el canal</span>. 
-            Aunque estemos mediados por un algoritmo o una IA, podemos interactuar con las personas de manera más directa.
-            <br><br>
-            Recordemos que las personas <b>no son solo "buyer personas" ni audiencias segmentadas</b>. 
-            Las tendencias no determinan el futuro, porque si así fuera, no pensaríamos que los seres humanos podemos cambiar.
+        <h2 style='color: #FF4B4B; text-align: center;'>Soberanía Digital e Ingeniería Inversa</h2>
+        <p>
+            <b>DeSeo</b> no nació solo como una suite de herramientas, sino como un acto de resistencia para 
+            <span class="highlight">democratizar el posicionamiento digital</span> en nuestra región.
+        </p>
+        <p>
+            Nos guiamos por el principio de la <span class="concept-tag">Ingeniería Inversa</span>: 
+            creemos que entender las entrañas de cómo funcionan los algoritmos y los motores de búsqueda nos otorga 
+            la capacidad real de actuar sobre ellos. No se trata de seguir reglas a ciegas, sino de descifrar la lógica 
+            para jugar nuestro propio juego.
+        </p>
+        <p>
+            Buscamos la <span class="concept-tag">Soberanía Digital</span>. En un mundo mediado por cajas negras y 
+            algoritmos opacos, recuperar el conocimiento es recuperar la autonomía. Entender cómo funciona la 
+            tecnología es el primer paso para no ser solo usuarios, sino dueños de nuestro mensaje y nuestro canal.
+        </p>
+        <hr style="border: 0.1px solid #444;">
+        <p style="font-style: italic; text-align: center; color: #BBB;">
+            "Revisar datos no es buscar certezas, es acompañar el comportamiento humano. Las personas no son audiencias 
+            segmentadas; son voluntades que cambian, y el SEO es nuestra forma de dialogar con ellas."
         </p>
     </div>
     """, unsafe_allow_html=True)
 
 st.divider()
 
-# Sección de Herramientas (Cards simples de Streamlit)
-st.subheader("🛠️ Tu Suite de Trabajo")
+# Sección de Herramientas
+st.subheader("🛠️ Tu Suite de Soberanía Digital")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.info("### 🌸 Screaming Flor\nAuditoría técnica y diagnósticos legibles.")
+    st.info("### 🌸 Screaming Flor\nAuditoría técnica para desarmar la estructura de cualquier web.")
 
 with col2:
-    st.success("### 🔍 Flor de Research\nKeyword research geolocalizado con IA.")
+    st.success("### 🔍 Flor de Research\nKeyword research para entender qué busca y desea la gente.")
 
 with col3:
-    st.warning("### ✍️ El Transformador\nOptimización y reciclaje de contenidos.")
-
-st.sidebar.markdown("---")
-st.sidebar.write("Hecho con ❤️ en Latam")
+    st.warning("### ✍️ El Transformador\nInteligencia aplicada para potenciar tu mensaje original.")
