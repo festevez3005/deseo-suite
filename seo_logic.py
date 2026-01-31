@@ -82,3 +82,51 @@ def audit_one(url, timeout=15):
     except:
         pass
     return out
+
+
+def get_google_suggestions(query):
+    """Obtiene sugerencias de autocompletado de Google de forma gratuita."""
+    url = f"http://suggestqueries.google.com/complete/search?client=firefox&q={query}"
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=5)
+        # El formato de respuesta es [query, [sugerencias], ...]
+        suggestions = r.json()[1]
+        return suggestions
+    except:
+        return []
+
+def analyze_keywords_with_openai(api_key, seed_keyword, suggestions):
+    """Usa OpenAI para categorizar las keywords y sugerir una estrategia."""
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+    
+    prompt = f"""
+    Actúa como una experta en SEO. He realizado un keyword research para '{seed_keyword}'.
+    Estas son las sugerencias de autocompletado encontradas: {', '.join(suggestions)}.
+    
+    Por favor, devuélveme una tabla en formato JSON con las siguientes columnas:
+    1. keyword: la palabra clave.
+    2. intencion: (Informativa, Transaccional o Navegacional).
+    3. etapa_embudo: (TOFU, MOFU, BOFU).
+    4. idea_contenido: una breve idea de qué escribir para esta keyword.
+    
+    Responde ÚNICAMENTE el JSON.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={ "type": "json_object" }
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        return {"error": str(e)}
+
+def get_research_glossary():
+    return {
+        "Keyword Research": "El proceso de encontrar y analizar los términos de búsqueda que la gente introduce en los buscadores.",
+        "Intención de Búsqueda": "El 'por qué' de la búsqueda. ¿El usuario quiere comprar, aprender o encontrar un sitio específico?",
+        "TOFU/MOFU/BOFU": "Etapas del embudo de conversión (Top, Middle, Bottom of the Funnel) que indican qué tan cerca está el usuario de convertir.",
+        "Seed Keyword": "La palabra clave 'semilla' o base desde la cual empezamos a buscar variaciones."
+    }
