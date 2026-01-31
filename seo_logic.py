@@ -1,69 +1,58 @@
-import requests
-import pandas as pd
-import gzip
-import time
-import re
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-from requests.exceptions import RequestException
-import xml.etree.ElementTree as ET
-
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"}
-
-def normalize_url(u: str) -> str:
-    u = (u or "").strip()
-    if not u: return ""
-    if u.startswith("www."): u = "https://" + u
-    return u
-
-def fetch_bytes(url: str, timeout: int = 15) -> bytes:
-    r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
-    r.raise_for_status()
-    return r.content
-
-def parse_sitemap_xml(xml_bytes: bytes):
-    sitemaps, urls = [], []
-    root = ET.fromstring(xml_bytes)
-    def findall_local(tag_name: str): return root.findall(f".//{{*}}{tag_name}")
-    sitemap_locs = [el.text.strip() for el in findall_local("sitemap") for el in el.findall(".//{*}loc") if el.text]
-    if sitemap_locs:
-        sitemaps.extend(sitemap_locs)
-        return sitemaps, urls
-    locs = [el.text.strip() for el in findall_local("loc") if el.text]
-    urls.extend(locs)
-    return sitemaps, urls
-
-def load_sitemap_urls(sitemap_url: str, max_urls: int = 300) -> list[str]:
-    sitemap_url = normalize_url(sitemap_url)
-    if not sitemap_url: return []
-    collected, to_process, seen = [], [sitemap_url], set()
-    while to_process and len(collected) < max_urls:
-        current = to_process.pop(0)
-        if current in seen: continue
-        seen.add(current)
-        try:
-            content = fetch_bytes(current)
-            if current.endswith(".gz"): content = gzip.decompress(content)
-            sitemaps, urls = parse_sitemap_xml(content)
-            for sm in sitemaps:
-                sm = normalize_url(sm)
-                if sm and sm not in seen: to_process.append(sm)
-            for u in urls:
-                u = normalize_url(u)
-                if u and u not in collected:
-                    collected.append(u)
-                    if len(collected) >= max_urls: break
-        except Exception: continue
-    return collected
-
 def audit_one(url: str, base_domain: str | None = None, timeout: int = 15) -> dict:
-    # Aquí va toda tu lógica de BeautifulSoup (la que ya tenías)
-    # [Asegúrate de pegar aquí la función completa que tenías antes]
-    return {"url": url, "status_code": 200} # Resumen por brevedad
+    out = {"url": url, "status": "✅ OK", "recommendation": "Ninguna"}
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+        soup = BeautifulSoup(r.text, "html.parser")
+        
+        # --- 1. Salud Técnica ---
+        out["status_code"] = r.status_code
+        if r.status_code != 200:
+            out["status"] = "❌ Error"
+            out["recommendation"] = "Revisar por qué la página no carga (posible 404 o error de servidor)."
 
-def add_issue_flags(df: pd.DataFrame) -> pd.DataFrame:
-    # Aquí va toda tu lógica de flags de errores (la que ya tenías)
-    return df
+        # --- 2. Títulos y Metas con Validación ---
+        title = soup.title.string.strip() if soup.title else ""
+        out["title"] = title
+        out["title_len"] = len(title)
+        if len(title) < 30:
+            out["title_status"] = "🟡 Muy corto"
+        elif len(title) > 65:
+            out["title_status"] = "🟡 Muy largo"
+        else:
+            out["title_status"] = "🟢 Perfecto"
 
-def to_csv_bytes(df: pd.DataFrame) -> bytes:
-    return df.to_csv(index=False).encode("utf-8-sig")
+        desc = extract_meta(soup, "description")
+        out["meta_desc"] = desc
+        out["desc_len"] = len(desc)
+        if len(desc) < 120:
+            out["desc_status"] = "🟡 Muy corta"
+        elif len(desc) > 160:
+            out["desc_status"] = "🟡 Muy larga"
+        else:
+            out["desc_status"] = "🟢 Perfecta"
+
+        # --- 3. Jerarquía H1-H3 ---
+        h1s = soup.find_all("h1")
+        out["h1_count"] = len(h1s)
+        if len(h1s) == 0:
+            out["h1_status"] = "🔴 Falta H1"
+        elif len(h1s) > 1:
+            out["h1_status"] = "🟡 Más de un H1"
+        else:
+            out["h1_status"] = "🟢 Correcto"
+
+        out["h2_count"] = len(soup.find_all("h2"))
+        out["h3_count"] = len(soup.find_all("h3"))
+
+        # --- 4. Imágenes y ALT ---
+        imgs = soup.find_all("img")
+        missing_alt = sum(1 for img in imgs if not img.get("alt"))
+        out["img_total"] = len(imgs)
+        out["img_no_alt"] = missing_alt
+        out["alt_status"] = "🟢 OK" if missing_alt == 0 else f"🔴 {missing_alt} sin texto ALT"
+
+    except Exception as e:
+        out["status"] = "❌ Error crítico"
+        out["recommendation"] = f"Error de conexión: {str(e)}"
+    
+    return out
