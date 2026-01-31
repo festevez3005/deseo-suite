@@ -1,8 +1,18 @@
 import streamlit as st
 import pandas as pd
+import sys
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from seo_logic import audit_one, to_csv_bytes # Asegúrate de tener estas funciones en seo_logic
 
+# --- TRUCO MÁGICO PARA EL IMPORT ---
+# Esto le dice a la página que mire en la carpeta raíz del proyecto
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from seo_logic import audit_one, to_csv_bytes, load_sitemap_urls, normalize_url
+except ImportError:
+    st.error("No se pudo cargar seo_logic.py. Asegúrate de que esté en la raíz del repositorio.")
+# ------------------------------------
 st.set_page_config(page_title="DeSeo - Screaming Flor", layout="wide")
 
 st.title("🌸 Screaming Flor: Diagnóstico SEO")
