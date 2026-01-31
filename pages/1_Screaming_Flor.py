@@ -1,50 +1,80 @@
-import streamlit as st
+import requests
 import pandas as pd
-from seo_logic import audit_one, to_csv_bytes
+from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
+import time
+from urllib.parse import urlparse
 
-# Estilo para mejorar la legibilidad de la tabla
-st.markdown("""
-    <style>
-    .reportview-container .main .block-container { padding-top: 2rem; }
-    </style>
-    """, unsafe_allow_html=True)
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"}
 
-# ... (Lógica de ejecución similar a la anterior) ...
+def get_glossary():
+    return {
+        "Status Code": "Código de respuesta del servidor (200=OK, 404=No encontrado, 301/302=Redirección).",
+        "Schema Markup": "Fragmentos de código (JSON-LD) que ayudan a buscadores e IAs a entender el contexto de tu página.",
+        "Internal Links": "Enlaces que apuntan a otras páginas de tu propio dominio. Clave para la navegación.",
+        "External Links": "Enlaces que apuntan a sitios fuera de tu dominio.",
+        "SEO Score": "Calificación de 0 a 100 basada en la salud técnica y optimización on-page de la URL.",
+        "H1": "El encabezado principal. Debe ser único y describir claramente el tema central."
+    }
 
-if st.button("🚀 Ejecutar Auditoría", type="primary") and urls:
-    # ... (Procesamiento con ThreadPoolExecutor) ...
-    df = pd.DataFrame(results)
+def load_sitemap_urls(sitemap_url, max_urls=100):
+    try:
+        r = requests.get(sitemap_url, headers=HEADERS, timeout=10)
+        root = ET.fromstring(r.content)
+        urls = [loc.text for loc in root.findall(".//{*}loc")]
+        return [u for u in urls if u and u.startswith("http")][:max_urls]
+    except:
+        return []
 
-    # --- NUEVA SECCIÓN: DASHBOARD DE ESTRATEGIA ---
-    st.subheader("💡 Análisis Estratégico")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Datos Estructurados (Schema)**")
-        con_schema = len(df[df['schema_detected'] != "No"])
-        st.info(f"Páginas con Schema: {con_schema} de {len(df)}")
-        st.caption("El Schema ayuda a Google y a las IAs a entender si eres un Producto, Receta, Artículo u Organización.")
+def to_csv_bytes(df):
+    return df.to_csv(index=False).encode("utf-8-sig")
 
-    with col2:
-        st.write("**Arquitectura de Enlaces**")
-        avg_int = df['internal_links'].mean()
-        st.success(f"Promedio de enlaces internos: {avg_int:.1f}")
-        st.caption("Los enlaces internos ayudan a distribuir la 'autoridad' de tu sitio entre tus páginas.")
+def audit_one(url, timeout=15):
+    out = {
+        "url": url, "status_code": "Error", "content_type": "Otro",
+        "seo_score": 0, "response_time": 0, "h1_count": 0, "title_len": 0, 
+        "schema_detected": "No", "internal_links": 0, "external_links": 0, "critical_issues": []
+    }
+    try:
+        start_time = time.time()
+        r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+        out["response_time"] = round(time.time() - start_time, 2)
+        out["status_code"] = r.status_code
+        
+        # Detección de Tipo de Contenido
+        ctype = r.headers.get("Content-Type", "").lower()
+        if "html" in ctype:
+            out["content_type"] = "HTML"
+            soup = BeautifulSoup(r.text, "html.parser")
+            
+            # 1. Schema Markup (JSON-LD)
+            schemas = soup.find_all("script", type="application/ld+json")
+            if schemas:
+                out["schema_detected"] = f"Sí ({len(schemas)} bloques)"
+            else:
+                out["critical_issues"].append("🟡 Sin Schema Markup (JSON-LD)")
 
-    # --- TABLA ESTILO SCREAMING FROG (Mejorada) ---
-    st.subheader("📊 Auditoría Técnica Detallada")
+            # 2. Linking Interno / Externo
+            domain = urlparse(url).netloc
+            links = soup.find_all("a", href=True)
+            int_l, ext_l = 0, 0
+            for link in links:
+                href = link['href']
+                if href.startswith("/") or (domain and domain in href):
+                    int_l += 1
+                else:
+                    ext_l += 1
+            out["internal_links"] = int_l
+            out["external_links"] = ext_l
 
-    def style_final(val):
-        """Función de color con texto negro para legibilidad"""
-        if isinstance(val, int):
-            if val < 60: return 'background-color: #ff4b4b; color: white;'
-            if val < 90: return 'background-color: #ffa500; color: black;'
-            return 'background-color: #2eb82e; color: white;' # Verde fuerte, texto blanco
-        return ''
-
-    # Reordenamos columnas para dar prioridad a lo nuevo
-    display_cols = ['url', 'seo_score', 'status_code', 'schema_detected', 'internal_links', 'h1_count', 'content_type']
-    st.dataframe(df[display_cols].style.applymap(style_final, subset=['seo_score']), use_container_width=True)
-
-    # Exportación
-    st.download_button("📥 Descargar Reporte Completo", data=to_csv_bytes(df), file_name="audit_deseo.csv")
+            # 3. On-Page Tradicional
+            title = soup.title.string.strip() if soup.title and soup.title.string else ""
+            out["title_len"] = len(title)
+            h1s = soup.find_all("h1")
+            out["h1_count"] = len(h1s)
+            
+            # Scoring
+            score = 100
+            if r.status_code != 200: score -= 50; out["critical_issues"].append("⚠️ Error Status")
+            if len(h1s) != 1: score -= 20; out["critical_issues"].append("🔴 Problema con H1")
+            if not (
