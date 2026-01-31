@@ -1,80 +1,81 @@
-import requests
+import streamlit as st
 import pandas as pd
-from bs4 import BeautifulSoup
-import xml.etree.ElementTree as ET
-import time
-from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from seo_logic import audit_one, load_sitemap_urls, to_csv_bytes, get_glossary
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"}
+st.set_page_config(page_title="Screaming Flor - Auditoría Pro", layout="wide")
 
-def get_glossary():
-    return {
-        "Status Code": "Código de respuesta del servidor (200=OK, 404=No encontrado, 301/302=Redirección).",
-        "Schema Markup": "Fragmentos de código (JSON-LD) que ayudan a buscadores e IAs a entender el contexto de tu página.",
-        "Internal Links": "Enlaces que apuntan a otras páginas de tu propio dominio. Clave para la navegación.",
-        "External Links": "Enlaces que apuntan a sitios fuera de tu dominio.",
-        "SEO Score": "Calificación de 0 a 100 basada en la salud técnica y optimización on-page de la URL.",
-        "H1": "El encabezado principal. Debe ser único y describir claramente el tema central."
-    }
+st.title("🌸 Screaming Flor: Auditoría de Sitio")
 
-def load_sitemap_urls(sitemap_url, max_urls=100):
-    try:
-        r = requests.get(sitemap_url, headers=HEADERS, timeout=10)
-        root = ET.fromstring(r.content)
-        urls = [loc.text for loc in root.findall(".//{*}loc")]
-        return [u for u in urls if u and u.startswith("http")][:max_urls]
-    except:
-        return []
+# --- GLOSARIO ---
+with st.expander("📖 Glosario de Conceptos SEO"):
+    glossary = get_glossary()
+    cols = st.columns(2)
+    for i, (term, definition) in enumerate(glossary.items()):
+        cols[i % 2].markdown(f"**{term}:** {definition}")
 
-def to_csv_bytes(df):
-    return df.to_csv(index=False).encode("utf-8-sig")
+# --- CONFIGURACIÓN ---
+st.sidebar.header("Panel de Control")
+mode = st.sidebar.radio("Fuente de URLs", ["Sitemap XML", "Lista Manual"])
+max_pages = st.sidebar.slider("Límite de páginas", 10, 100, 50)
 
-def audit_one(url, timeout=15):
-    out = {
-        "url": url, "status_code": "Error", "content_type": "Otro",
-        "seo_score": 0, "response_time": 0, "h1_count": 0, "title_len": 0, 
-        "schema_detected": "No", "internal_links": 0, "external_links": 0, "critical_issues": []
-    }
-    try:
-        start_time = time.time()
-        r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
-        out["response_time"] = round(time.time() - start_time, 2)
-        out["status_code"] = r.status_code
-        
-        # Detección de Tipo de Contenido
-        ctype = r.headers.get("Content-Type", "").lower()
-        if "html" in ctype:
-            out["content_type"] = "HTML"
-            soup = BeautifulSoup(r.text, "html.parser")
-            
-            # 1. Schema Markup (JSON-LD)
-            schemas = soup.find_all("script", type="application/ld+json")
-            if schemas:
-                out["schema_detected"] = f"Sí ({len(schemas)} bloques)"
-            else:
-                out["critical_issues"].append("🟡 Sin Schema Markup (JSON-LD)")
+urls = []
+if mode == "Sitemap XML":
+    s_url = st.text_input("Ingresa la URL del Sitemap")
+    if s_url: urls = load_sitemap_urls(s_url, max_pages)
+else:
+    t_area = st.text_area("Pega tus URLs (una por línea)")
+    if t_area: urls = [u.strip() for u in t_area.splitlines() if u.strip()][:max_pages]
 
-            # 2. Linking Interno / Externo
-            domain = urlparse(url).netloc
-            links = soup.find_all("a", href=True)
-            int_l, ext_l = 0, 0
-            for link in links:
-                href = link['href']
-                if href.startswith("/") or (domain and domain in href):
-                    int_l += 1
-                else:
-                    ext_l += 1
-            out["internal_links"] = int_l
-            out["external_links"] = ext_l
+# --- EJECUCIÓN ---
+if st.button("🚀 Iniciar Auditoría Masiva", type="primary") and urls:
+    with st.status("Analizando sitio...", expanded=True) as status:
+        results = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(audit_one, u): u for u in urls}
+            for i, fut in enumerate(as_completed(futures)):
+                results.append(fut.result())
+        status.update(label="¡Análisis Finalizado!", state="complete", expanded=False)
 
-            # 3. On-Page Tradicional
-            title = soup.title.string.strip() if soup.title and soup.title.string else ""
-            out["title_len"] = len(title)
-            h1s = soup.find_all("h1")
-            out["h1_count"] = len(h1s)
-            
-            # Scoring
-            score = 100
-            if r.status_code != 200: score -= 50; out["critical_issues"].append("⚠️ Error Status")
-            if len(h1s) != 1: score -= 20; out["critical_issues"].append("🔴 Problema con H1")
-            if not (
+    df = pd.DataFrame(results)
+
+    # --- 1. SECCIÓN DE ALERTAS ---
+    all_issues = [issue for sublist in df['critical_issues'] for issue in sublist]
+    if all_issues:
+        st.subheader("🚨 Hallazgos Críticos")
+        issue_series = pd.Series(all_issues).value_counts()
+        for issue, count in issue_series.items():
+            st.error(f"**{issue}:** Encontrado en {count} páginas.")
+
+    # --- 2. RESUMEN ESTRATÉGICO ---
+    st.divider()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Salud Promedio", f"{int(df['seo_score'].mean())}/100")
+    
+    con_schema = len(df[df['schema_detected'] != "No"])
+    c2.metric("Páginas con Schema", f"{con_schema}")
+    
+    avg_links = df[df['content_type'] == 'HTML']['internal_links'].mean()
+    c3.metric("Promedio Enlaces Int.", f"{avg_links:.1f}")
+
+    # --- 3. TABLA DETALLADA ---
+    st.subheader("📊 Tabla de Datos (Estilo Screaming Frog)")
+    
+    # Función de estilo mejorada para legibilidad
+    def style_seo_table(v):
+        if not isinstance(v, (int, float)): return ''
+        if v < 60: return 'background-color: #d9534f; color: white; font-weight: bold;' # Rojo fuerte
+        if v < 90: return 'background-color: #f0ad4e; color: black; font-weight: bold;' # Naranja
+        return 'background-color: #5cb85c; color: white; font-weight: bold;' # Verde fuerte
+
+    display_cols = ['url', 'seo_score', 'status_code', 'schema_detected', 'internal_links', 'h1_count', 'content_type']
+    st.dataframe(
+        df[display_cols].style.applymap(style_seo_table, subset=['seo_score']), 
+        use_container_width=True
+    )
+
+    # --- 4. EXPORTACIÓN ---
+    st.download_button("📥 Descargar Reporte CSV", data=to_csv_bytes(df), file_name="auditoria_deseo.csv")
+
+elif not urls and 's_url' in locals():
+    st.info("Introduce una fuente de datos para comenzar el análisis.")
