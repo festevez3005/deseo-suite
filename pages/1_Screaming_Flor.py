@@ -10,25 +10,25 @@ st.title("🌸 Screaming Flor: Auditoría de Sitio")
 # --- GLOSARIO ---
 with st.expander("📖 Glosario de Conceptos SEO"):
     glossary = get_glossary()
-    cols = st.columns(2)
+    cols = st.columns(3)
     for i, (term, definition) in enumerate(glossary.items()):
-        cols[i % 2].markdown(f"**{term}:** {definition}")
+        cols[i % 3].markdown(f"**{term}:** {definition}")
 
 # --- CONFIGURACIÓN ---
 st.sidebar.header("Panel de Control")
-mode = st.sidebar.radio("Fuente de URLs", ["Sitemap XML", "Lista Manual"])
+mode = st.sidebar.radio("Fuente", ["Sitemap XML", "Lista Manual"])
 max_pages = st.sidebar.slider("Límite de páginas", 10, 100, 50)
 
 urls = []
 if mode == "Sitemap XML":
-    s_url = st.text_input("Ingresa la URL del Sitemap")
+    s_url = st.text_input("URL del Sitemap", placeholder="https://tusitio.com/sitemap.xml")
     if s_url: urls = load_sitemap_urls(s_url, max_pages)
 else:
-    t_area = st.text_area("Pega tus URLs (una por línea)")
+    t_area = st.text_area("URLs (una por línea)")
     if t_area: urls = [u.strip() for u in t_area.splitlines() if u.strip()][:max_pages]
 
 # --- EJECUCIÓN ---
-if st.button("🚀 Iniciar Auditoría Masiva", type="primary") and urls:
+if st.button("🚀 Ejecutar Auditoría", type="primary") and urls:
     with st.status("Analizando sitio...", expanded=True) as status:
         results = []
         with ThreadPoolExecutor(max_workers=10) as executor:
@@ -39,43 +39,37 @@ if st.button("🚀 Iniciar Auditoría Masiva", type="primary") and urls:
 
     df = pd.DataFrame(results)
 
-    # --- 1. SECCIÓN DE ALERTAS ---
-    all_issues = [issue for sublist in df['critical_issues'] for issue in sublist]
-    if all_issues:
-        st.subheader("🚨 Hallazgos Críticos")
-        issue_series = pd.Series(all_issues).value_counts()
-        for issue, count in issue_series.items():
-            st.error(f"**{issue}:** Encontrado en {count} páginas.")
-
-    # --- 2. RESUMEN ESTRATÉGICO ---
+    # --- RESUMEN ---
     st.divider()
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Salud Promedio", f"{int(df['seo_score'].mean())}/100")
-    
-    con_schema = len(df[df['schema_detected'] != "No"])
-    c2.metric("Páginas con Schema", f"{con_schema}")
-    
-    avg_links = df[df['content_type'] == 'HTML']['internal_links'].mean()
-    c3.metric("Promedio Enlaces Int.", f"{avg_links:.1f}")
+    c2.metric("Páginas con Schema", f"{len(df[df['schema_detected'] != 'No'])}")
+    c3.metric("Promedio Títulos", f"{int(df['title_len'].mean())} car.")
+    c4.metric("Sin Meta Desc.", f"{len(df[df['meta_desc'] == ''])}")
 
-    # --- 3. TABLA DETALLADA ---
-    st.subheader("📊 Tabla de Datos (Estilo Screaming Frog)")
+    # --- TABLA ESTILO SCREAMING FROG ---
+    st.subheader("📊 Tabla de Datos Detallada")
     
-    # Función de estilo mejorada para legibilidad
-    def style_seo_table(v):
+    # Definimos las columnas y su orden
+    cols_to_show = [
+        'url', 'seo_score', 'status_code', 'title', 'title_len', 
+        'meta_desc', 'meta_desc_len', 'h1_count', 'schema_detected', 'internal_links'
+    ]
+    
+    def color_score(v):
         if not isinstance(v, (int, float)): return ''
-        if v < 60: return 'background-color: #d9534f; color: white; font-weight: bold;' # Rojo fuerte
-        if v < 90: return 'background-color: #f0ad4e; color: black; font-weight: bold;' # Naranja
-        return 'background-color: #5cb85c; color: white; font-weight: bold;' # Verde fuerte
+        if v < 60: return 'background-color: #d9534f; color: white;'
+        if v < 90: return 'background-color: #f0ad4e; color: black;'
+        return 'background-color: #5cb85c; color: white;'
 
-    display_cols = ['url', 'seo_score', 'status_code', 'schema_detected', 'internal_links', 'h1_count', 'content_type']
+    # Mostramos la tabla. Streamlit permite expandir las celdas de texto automáticamente.
     st.dataframe(
-        df[display_cols].style.applymap(style_seo_table, subset=['seo_score']), 
+        df[cols_to_show].style.applymap(color_score, subset=['seo_score']), 
         use_container_width=True
     )
 
-    # --- 4. EXPORTACIÓN ---
+    # --- EXPORTACIÓN ---
     st.download_button("📥 Descargar Reporte CSV", data=to_csv_bytes(df), file_name="auditoria_deseo.csv")
 
 elif not urls and 's_url' in locals():
-    st.info("Introduce una fuente de datos para comenzar el análisis.")
+    st.info("Configura la fuente en el panel lateral para comenzar.")
