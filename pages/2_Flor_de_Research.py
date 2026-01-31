@@ -1,71 +1,81 @@
 import streamlit as st
 import pandas as pd
-from seo_logic import get_google_suggestions, analyze_keywords_with_openai, get_research_glossary
+from seo_logic import (
+    get_latam_countries, get_expanded_suggestions, 
+    analyze_keywords_with_openai, get_research_glossary
+)
 
 st.set_page_config(page_title="Flor de Research - DeSeo", layout="wide")
 
 st.title("🔍 Flor de Research")
-st.markdown("Descubre qué busca tu audiencia y cómo responder a sus necesidades.")
+st.markdown("Geolocaliza tu estrategia y entiende la mente de tu usuario.")
 
-# --- SECCIÓN EDUCATIVA ---
-with st.expander("🎓 ¿Qué es el Keyword Research?"):
-    st.write("""
-    El Keyword Research es la base de cualquier estrategia digital. No se trata solo de encontrar palabras con mucho tráfico, 
-    sino de entender **la intención** detrás de ellas.
-    """)
-    glossary = get_research_glossary()
-    for term, desc in glossary.items():
-        st.markdown(f"**{term}:** {desc}")
+# --- GLOSARIO EDUCATIVO ---
+with st.expander("📚 Conceptos Clave de Keyword Research"):
+    glosario = get_research_glossary()
+    cols = st.columns(2)
+    for i, (k, v) in enumerate(glosario.items()):
+        cols[i%2].write(f"**{k}:** {v}")
 
 st.divider()
 
 # --- CONFIGURACIÓN ---
 with st.sidebar:
-    st.header("Configuración de IA")
-    # Intentamos obtener la key de los secretos o pedimos entrada manual
-    api_key_input = st.text_input("OpenAI API Key", type="password", 
-                                 help="Tu key se usa solo para esta sesión y no se guarda.")
-    # Priorizar la key de st.secrets si existe
+    st.header("Ajustes de Búsqueda")
+    paises = get_latam_countries()
+    pais_sel = st.selectbox("Selecciona País", list(paises.keys()))
+    
+    st.header("IA Estratega")
+    api_key_input = st.text_input("OpenAI API Key", type="password")
     api_key = st.secrets.get("OPENAI_API_KEY") or api_key_input
 
-st.subheader("1. Generador de Ideas")
-col1, col2 = st.columns([2, 1])
+# --- ENTRADA ---
+col_in, col_btn = st.columns([3, 1])
+with col_in:
+    seed = st.text_input("Palabra semilla o Nicho", placeholder="ej: cursos de cocina")
 
-with col1:
-    seed = st.text_input("Introduce una palabra base (ej: marketing digital)", placeholder="zapatos de cuero")
-
-if seed:
-    suggestions = get_google_suggestions(seed)
-    
-    if suggestions:
-        st.success(f"Encontramos {len(suggestions)} sugerencias basadas en búsquedas reales.")
+if st.button("🚀 Investigar Mercado", type="primary") and seed:
+    with st.status("Rastreando sugerencias locales y analizando con IA...", expanded=True) as status:
         
-        # Mostrar sugerencias crudas
-        with st.expander("Ver sugerencias de autocompletado"):
-            st.write(", ".join(suggestions))
+        # 1. Scraping de Google (Gratis y Legal)
+        keywords_raw = get_expanded_suggestions(seed, paises[pais_sel])
         
-        st.divider()
-        st.subheader("2. Análisis Estratégico con IA")
-        
-        if not api_key:
-            st.info("💡 Para clasificar estas palabras por intención y etapa del embudo, por favor introduce tu OpenAI API Key en la barra lateral.")
-        else:
-            if st.button("✨ Analizar Keywords con DeSeo IA"):
-                with st.spinner("La IA está clasificando y generando ideas de contenido..."):
-                    analysis = analyze_keywords_with_openai(api_key, seed, suggestions)
+        if keywords_raw:
+            st.write(f"✅ Se encontraron {len(keywords_raw)} variaciones reales en {pais_sel}.")
+            
+            if not api_key:
+                status.update(label="Análisis básico completo (Sin IA)", state="complete")
+                st.warning("Añade tu API Key para desbloquear la intención de búsqueda y pistas educativas.")
+                st.write(pd.DataFrame(keywords_raw, columns=["Keywords Sugeridas"]))
+            else:
+                # 2. Análisis con IA
+                st.write("🧠 La IA está clasificando por intención y creando pistas...")
+                analysis = analyze_keywords_with_openai(api_key, seed, keywords_raw, pais_sel)
+                
+                if "error" in analysis:
+                    st.error(f"Error en IA: {analysis['error']}")
+                else:
+                    df = pd.DataFrame(analysis['keywords'])
+                    status.update(label="¡Estrategia Lista!", state="complete")
                     
-                    if "error" in analysis:
-                        st.error(f"Error con la API de OpenAI: {analysis['error']}")
-                    else:
-                        # Extraer la lista del JSON (OpenAI suele devolver una lista bajo una llave)
-                        key_list = list(analysis.values())[0]
-                        df_keywords = pd.DataFrame(key_list)
-                        
-                        st.balloons()
-                        st.dataframe(df_keywords, use_container_width=True)
-                        
-                        # Opción de descarga
-                        csv = df_keywords.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Descargar Estrategia", data=csv, file_name=f"research_{seed}.csv")
-    else:
-        st.warning("No pudimos obtener sugerencias para esa palabra. Intenta con un término más general.")
+                    # --- RESULTADOS ---
+                    st.balloons()
+                    
+                    # KPIs Rápidos
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        trans = len(df[df['intencion'] == 'Transaccional'])
+                        st.metric("Oportunidades de Venta", f"{trans} keywords")
+                    with c2:
+                        inf = len(df[df['intencion'] == 'Informativa'])
+                        st.metric("Oportunidades de Contenido", f"{inf} keywords")
+
+                    # Tabla Maestra
+                    st.subheader(f"📊 Plan de Keywords para {pais_sel}")
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # Exportación
+                    csv = df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Descargar Estrategia", data=csv, file_name=f"research_{seed}_{pais_sel}.csv")
+        else:
+            st.error("No se pudieron obtener datos. Intenta con una palabra más simple.")
