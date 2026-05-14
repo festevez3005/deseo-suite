@@ -38,13 +38,11 @@ def normalize_url(url):
 
 
 def fetch_bytes(url):
-    """
-    Descarga bytes desde una URL.
-    Reintenta hasta 3 veces.
-    """
 
     for _ in range(3):
+
         try:
+
             response = requests.get(
                 url,
                 headers=HEADERS,
@@ -62,30 +60,26 @@ def fetch_bytes(url):
 
 
 def parse_sitemap(xml_bytes):
-    """
-    Extrae URLs desde un sitemap XML.
-    """
 
     urls = []
 
     try:
+
         root = ET.fromstring(xml_bytes)
 
         for loc in root.findall(".//{*}loc"):
+
             if loc.text:
                 urls.append(loc.text.strip())
 
     except Exception as e:
+
         st.warning(f"Error parseando sitemap: {e}")
 
     return urls
 
 
 def load_sitemap(sitemap_url, max_urls=20):
-    """
-    Carga URLs desde un sitemap.
-    Soporta .gz
-    """
 
     content = fetch_bytes(sitemap_url)
 
@@ -93,6 +87,7 @@ def load_sitemap(sitemap_url, max_urls=20):
         return []
 
     try:
+
         if sitemap_url.endswith(".gz"):
             content = gzip.decompress(content)
 
@@ -142,26 +137,58 @@ def audit_url(url):
         for tag in soup(["script", "style"]):
             tag.decompose()
 
-        # title
+        # =========================
+        # TITLE
+        # =========================
+
         title = ""
 
         if soup.title and soup.title.string:
             title = soup.title.string.strip()
 
-        # h1
+        # =========================
+        # META DESCRIPTION
+        # =========================
+
+        meta_description = ""
+
+        meta_tag = soup.find(
+            "meta",
+            attrs={"name": "description"}
+        )
+
+        if meta_tag and meta_tag.get("content"):
+            meta_description = meta_tag.get("content").strip()
+
+        # =========================
+        # H1
+        # =========================
+
         h1_tags = soup.find_all("h1")
 
-        # texto
+        # =========================
+        # WORD COUNT
+        # =========================
+
         text = soup.get_text(separator=" ")
 
         text = re.sub(r"\s+", " ", text)
 
         word_count = len(text.split())
 
+        # =========================
+        # RESULT
+        # =========================
+
         result.update({
             "title": title,
             "title_len": len(title),
+
+            "meta_description": meta_description,
+            "meta_description_len": len(meta_description),
+
             "h1_count": len(h1_tags),
+
             "word_count": word_count
         })
 
@@ -173,7 +200,7 @@ def audit_url(url):
 
 
 # ==================================================
-# SCORE SEO
+# SEO SCORE
 # ==================================================
 
 def compute_score(row):
@@ -182,27 +209,36 @@ def compute_score(row):
 
     status_code = row.get("status_code") or 0
     title_len = row.get("title_len") or 0
+    meta_description_len = row.get("meta_description_len") or 0
     h1_count = row.get("h1_count") or 0
     word_count = row.get("word_count") or 0
 
+    # Status 200
     if status_code == 200:
-        score += 25
+        score += 20
 
+    # Title OK
     if 10 <= title_len <= 70:
-        score += 25
+        score += 20
 
+    # Meta description OK
+    if 50 <= meta_description_len <= 160:
+        score += 20
+
+    # H1 OK
     if h1_count == 1:
-        score += 25
+        score += 20
 
+    # Content OK
     if word_count > 300:
-        score += 25
+        score += 20
 
     return score
 
 
 def score_label(score):
 
-    if score >= 75:
+    if score >= 80:
         return "🟢 Alto"
 
     elif score >= 50:
@@ -299,9 +335,13 @@ if st.button("🚀 Auditar"):
             for i, future in enumerate(as_completed(futures)):
 
                 try:
-                    results.append(future.result())
+
+                    results.append(
+                        future.result()
+                    )
 
                 except Exception as e:
+
                     results.append({
                         "url": futures[future],
                         "error": str(e)
@@ -323,13 +363,23 @@ if st.button("🚀 Auditar"):
 
     # columnas seguras
     default_cols = {
+
         "url": "",
+
         "status_code": None,
+
         "response_ms": None,
+
         "title": "",
         "title_len": 0,
+
+        "meta_description": "",
+        "meta_description_len": 0,
+
         "h1_count": 0,
+
         "word_count": 0,
+
         "error": ""
     }
 
@@ -338,7 +388,10 @@ if st.button("🚀 Auditar"):
         if col not in df.columns:
             df[col] = default
 
+    # ==================================================
     # SEO SCORE
+    # ==================================================
+
     df["seo_score"] = df.apply(
         compute_score,
         axis=1
@@ -355,14 +408,27 @@ if st.button("🚀 Auditar"):
     st.subheader("📊 Resultados")
 
     cols_to_show = [
+
         "url",
+
         "status_code",
+
         "response_ms",
+
+        "title",
         "title_len",
+
+        "meta_description",
+        "meta_description_len",
+
         "h1_count",
+
         "word_count",
+
         "seo_score",
+
         "score_label",
+
         "error"
     ]
 
@@ -380,31 +446,35 @@ if st.button("🚀 Auditar"):
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
+
         st.metric(
             "URLs auditadas",
             len(df)
         )
 
     with col2:
+
         st.metric(
             "Status 200",
             int((df["status_code"] == 200).sum())
         )
 
     with col3:
+
         st.metric(
             "SEO Score promedio",
             round(df["seo_score"].mean(), 1)
         )
 
     with col4:
+
         st.metric(
             "Tiempo promedio (ms)",
             int(df["response_ms"].fillna(0).mean())
         )
 
     # ==================================================
-    # DOWNLOAD
+    # DOWNLOAD CSV
     # ==================================================
 
     csv = df.to_csv(
